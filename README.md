@@ -6,6 +6,32 @@ Cukup jalankan aplikasi desktop **`Gamepad.exe`** di Windows, scan QR code yang 
 
 ---
 
+## 📸 Tangkapan Layar (Screenshots)
+
+### 1. Gamepad HP Layar Penuh (Fullscreen Murni)
+Layar bermain bersih tanpa teks atau tombol antarmuka yang mengganggu. Mendukung multi-touch, dual analog stick, tombol aksi, dan L1/R1/L2/R2.
+
+![Gamepad Virtual Fullscreen](screenshots/mobile-gamepad.png)
+
+### 2. Mode Editor Tata Letak & Perbesar Tombol
+Atur posisi setiap tombol dengan menggesernya secara bebas. Ketuk tombol untuk memperbesar (`+`) atau memperkecil (`-`) ukurannya (skala 60% s/d 220%), atau gunakan gesture cubitan 2 jari (*pinch to zoom*).
+
+![Editor Tata Letak dan Ukuran](screenshots/layout-editor.png)
+
+### 3. Aplikasi Windows Desktop & Menu HP
+Aplikasi Windows mandiri (`Gamepad.exe`) menampilkan QR code pairing langsung di layar PC beserta status 4 slot pemain. Di HP, tersedia menu lengkap untuk memilih slot pemain (P1–P4) dan opsi mapping.
+
+| Aplikasi Windows Native (`Gamepad.exe`) | Tampilan Menu Setup di HP |
+| :---: | :---: |
+| ![Windows Desktop App](screenshots/windows-desktop-app.png) | <img src="screenshots/mobile-menu.png" width="360" alt="Mobile Menu"> |
+
+### 4. Dashboard Web Host
+Alternatif monitoring via web browser di `http://127.0.0.1:8765/host` untuk melihat QR code dan diagnostik koneksi LAN.
+
+![Dashboard Web Host](screenshots/desktop-web-dashboard.png)
+
+---
+
 ## ✨ Fitur Utama
 
 - **Aplikasi Windows Native 1x Klik (`Gamepad.exe`)**:
