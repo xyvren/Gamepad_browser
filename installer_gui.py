@@ -140,7 +140,7 @@ class InstallerApp:
 
         # 2. Firewall
         if self.cb_firewall.get():
-            self.log("[*] Mengatur Windows Firewall (Port TCP 8765)...")
+            self.log("[*] Mengatur Windows Firewall (Port TCP 8765 & 8766)...")
             ps_script = current_dir / "enable-firewall.ps1"
             if ps_script.exists():
                 try:

@@ -1,9 +1,10 @@
 const $=s=>document.querySelector(s);
-let lastStatus=null;
+let lastStatus=null,currentProto='http';
 function render(d){
  const slot=Number($('#host-slot').value),entry=d.slots?.find(s=>s.slot===slot);
  const mode=entry?.mode||d.mode;
- $('#server').textContent='SERVER ONLINE';$('#driver').textContent=mode==='xinput'?'XINPUT READY':'DRIVER BELUM SIAP';$('#url').value=d.url||'';
+ $('#server').textContent='SERVER ONLINE';$('#driver').textContent=mode==='xinput'?'XINPUT READY':'DRIVER BELUM SIAP';
+ $('#url').value=currentProto==='https'?(d.https_url||d.url||''):(d.url||'');
  $('#connection').textContent=`${d.connected_count??(d.connected?1:0)} / ${d.capacity||4} stik terhubung`;
  $('#subtitle').textContent=`Stik ${slot} · ${entry?.connected?'HP terhubung':'menunggu HP'}`;
  for(const option of $('#host-slot').options){const s=d.slots?.find(s=>s.slot===Number(option.value));option.textContent=`Stik ${option.value}${s?.connected?' · Terhubung':''}`;}
@@ -15,4 +16,22 @@ function render(d){
 }
 async function refresh(){try{if(!document.hidden){const r=await fetch('/api/status',{cache:'no-store'});if(!r.ok)throw Error();lastStatus=await r.json();render(lastStatus);}}catch{$('#server').textContent='SERVER OFFLINE';$('#connection').textContent='Koneksi server terputus';}finally{setTimeout(refresh,500);}}
 $('#host-slot').onchange=()=>{if(lastStatus)render(lastStatus);};
-$('#copy').onclick=async()=>{try{await navigator.clipboard.writeText($('#url').value);$('#copy').textContent='Tersalin';setTimeout(()=>$('#copy').textContent='Salin',1500);}catch{$('#url').select();$('#copy').textContent='Ctrl+C';}};refresh();
+$('#copy').onclick=async()=>{try{await navigator.clipboard.writeText($('#url').value);$('#copy').textContent='Tersalin';setTimeout(()=>$('#copy').textContent='Salin',1500);}catch{$('#url').select();$('#copy').textContent='Ctrl+C';}};
+const btnHttp=$('#btn-proto-http'),btnHttps=$('#btn-proto-https');
+if(btnHttp&&btnHttps){
+ btnHttp.onclick=()=>{
+  currentProto='http';
+  btnHttp.style.background='var(--accent)';btnHttp.style.color='#101214';
+  btnHttps.style.background='#20252a';btnHttps.style.color='#c0c9ce';
+  const qr=$('.qr');if(qr)qr.src='/api/qr?proto=http&_t='+Date.now();
+  if(lastStatus)render(lastStatus);
+ };
+ btnHttps.onclick=()=>{
+  currentProto='https';
+  btnHttps.style.background='var(--accent)';btnHttps.style.color='#101214';
+  btnHttp.style.background='#20252a';btnHttp.style.color='#c0c9ce';
+  const qr=$('.qr');if(qr)qr.src='/api/qr?proto=https&_t='+Date.now();
+  if(lastStatus)render(lastStatus);
+ };
+}
+refresh();

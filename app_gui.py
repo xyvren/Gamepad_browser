@@ -40,6 +40,7 @@ class GamepadApp:
                 pass
 
         self.port = 8765
+        self.https_port = 8766
         self.capacity = 4
         self.pads = []
         self.token = secrets.token_urlsafe(24)
@@ -47,6 +48,7 @@ class GamepadApp:
         self.loop = None
         self.runner = None
         self.site = None
+        self.https_site = None
         self.running = True
         self.qr_photo = None
         self.url = f"http://{lan_ip()}:{self.port}/#token={self.token}"
@@ -89,11 +91,20 @@ class GamepadApp:
         def run_loop():
             self.loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self.loop)
-            app = create_app(self.pads, self.token, self.port, capacity=self.capacity)
+            app = create_app(self.pads, self.token, self.port, capacity=self.capacity, https_port=self.https_port)
             self.runner = web.AppRunner(app, access_log=None)
             self.loop.run_until_complete(self.runner.setup())
             self.site = web.TCPSite(self.runner, "0.0.0.0", self.port)
             self.loop.run_until_complete(self.site.start())
+
+            try:
+                from ssl_helper import get_or_create_ssl_context
+                ssl_ctx, _, _ = get_or_create_ssl_context(BUNDLE_DIR / ".ssl", lan_ip())
+                self.https_site = web.TCPSite(self.runner, "0.0.0.0", self.https_port, ssl_context=ssl_ctx)
+                self.loop.run_until_complete(self.https_site.start())
+            except Exception as e:
+                print(f"HTTPS site skipped in GUI: {e}")
+
             self.loop.run_forever()
 
         self.server_thread = threading.Thread(target=run_loop, daemon=True)
@@ -148,9 +159,29 @@ class GamepadApp:
         )
         lbl_qr_sub.pack(pady=(0, 10))
 
+        # Mode selector (Standard HTTP vs Gyro Steering HTTPS)
+        mode_frame = tk.Frame(left, bg="#181c20")
+        mode_frame.pack(fill="x", padx=18, pady=(0, 6))
+
+        self.proto_var = tk.StringVar(value="http")
+
+        rb_http = tk.Radiobutton(
+            mode_frame, text="Standar (HTTP)", variable=self.proto_var, value="http",
+            command=self._on_proto_change, font=("Segoe UI", 8, "bold"),
+            fg="#d4f582", bg="#181c20", selectcolor="#101315", activebackground="#181c20", activeforeground="#d4f582"
+        )
+        rb_http.pack(side="left", padx=(0, 8))
+
+        rb_https = tk.Radiobutton(
+            mode_frame, text="Gyro Setir (HTTPS)", variable=self.proto_var, value="https",
+            command=self._on_proto_change, font=("Segoe UI", 8, "bold"),
+            fg="#d4f582", bg="#181c20", selectcolor="#101315", activebackground="#181c20", activeforeground="#d4f582"
+        )
+        rb_https.pack(side="left")
+
         # QR Code Display
         self.qr_label = tk.Label(left, bg="#181c20")
-        self.qr_label.pack(pady=5)
+        self.qr_label.pack(pady=4)
         self._update_qr_image()
 
         # URL Box & Copy Button
@@ -315,11 +346,20 @@ class GamepadApp:
         if ps_script.exists():
             cmd = f'powershell.exe -Command "Start-Process powershell -Verb RunAs -ArgumentList \'-NoProfile -ExecutionPolicy Bypass -File \"\"{str(ps_script)}\"\"\'"'
             subprocess.run(cmd, shell=True)
-            messagebox.showinfo("Firewall", "Rule firewall untuk port TCP 8765 sedang diproses lewat PowerShell Administrator.")
+            messagebox.showinfo("Firewall", "Rule firewall untuk port TCP 8765 & 8766 sedang diproses lewat PowerShell Administrator.")
+
+    def _on_proto_change(self):
+        proto = self.proto_var.get()
+        p = self.https_port if proto == "https" else self.port
+        self.url = f"{proto}://{lan_ip()}:{p}/#token={self.token}"
+        self.url_var.set(self.url)
+        self._update_qr_image()
 
     def _regenerate_token(self):
         self.token = secrets.token_urlsafe(24)
-        self.url = f"http://{lan_ip()}:{self.port}/#token={self.token}"
+        proto = self.proto_var.get()
+        p = self.https_port if proto == "https" else self.port
+        self.url = f"{proto}://{lan_ip()}:{p}/#token={self.token}"
         self.url_var.set(self.url)
         self._update_qr_image()
 

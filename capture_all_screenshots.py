@@ -95,6 +95,33 @@ def main():
         page_pad.wait_for_timeout(500)
         page_pad.screenshot(path=str(SHOTS_DIR / "mobile-gamepad.png"))
 
+        # 3b. Gyro Steering Wheel Mode (Landscape)
+        print("[*] Capturing gyro steering wheel mode...")
+        page_gyro = browser.new_page(
+            viewport={"width": 915, "height": 412},
+            device_scale_factor=2,
+            has_touch=True,
+            is_mobile=True
+        )
+        page_gyro.goto(f"http://127.0.0.1:8765/#token={token}")
+        page_gyro.wait_for_function("['online','diagnostic'].includes(document.body.dataset.connection)")
+        # Toggle gyro
+        page_gyro.locator("#quick-toggle-gyro").click()
+        page_gyro.wait_for_timeout(200)
+        # Click Run Gamepad
+        page_gyro.locator("#run-gamepad").click()
+        page_gyro.wait_for_selector("#gyro-overlay", state="visible")
+        page_gyro.evaluate("""() => {
+            const event = new Event('deviceorientation');
+            event.beta = 24;
+            event.gamma = 0;
+            window.dispatchEvent(event);
+            document.getElementById('gyro-wheel').style.transform = 'rotate(24deg)';
+            document.getElementById('gyro-angle-display').textContent = '+24°';
+        }""")
+        page_gyro.wait_for_timeout(500)
+        page_gyro.screenshot(path=str(SHOTS_DIR / "gyro-steering-mode.png"))
+
         # 4. Desktop Web Dashboard
         print("[*] Capturing desktop web dashboard...")
         page_host = browser.new_page(

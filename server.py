@@ -17,9 +17,15 @@ ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).parent))
 class DiagnosticPad:
     mode = 'diagnostic'
     error = 'Driver ViGEmBus belum tersedia. Input terlihat di dashboard, tetapi belum masuk ke game.'
-    def __init__(self): self.state = neutral()
+    def __init__(self):
+        self.state = neutral()
+        self.rumble_cb = None
     def apply(self, state): self.state = state
     def reset(self): self.apply(neutral())
+    def set_rumble_callback(self, cb): self.rumble_cb = cb
+    def trigger_rumble(self, large, small):
+        if self.rumble_cb:
+            self.rumble_cb(large, small)
 
 class XboxPad(DiagnosticPad):
     mode = 'xinput'
@@ -31,6 +37,12 @@ class XboxPad(DiagnosticPad):
         super().__init__()
         names = {'cross':'A','circle':'B','square':'X','triangle':'Y','up':'DPAD_UP','down':'DPAD_DOWN','left':'DPAD_LEFT','right':'DPAD_RIGHT','l1':'LEFT_SHOULDER','r1':'RIGHT_SHOULDER','l3':'LEFT_THUMB','r3':'RIGHT_THUMB','share':'BACK','options':'START','home':'GUIDE'}
         self.buttons = {k:getattr(vg.XUSB_BUTTON,'XUSB_GAMEPAD_'+v) for k,v in names.items()}
+        def _on_notification(client, target, large_motor, small_motor, led_number, user_data):
+            self.trigger_rumble(large_motor, small_motor)
+        try:
+            self.device.register_notification(_on_notification)
+        except Exception:
+            pass
     def apply(self, state):
         self.device.reset()
         for b in state['buttons']: self.device.press_button(button=self.buttons[b])
@@ -50,7 +62,7 @@ def lan_ip():
     except OSError: return '127.0.0.1'
     finally: s.close()
 
-def create_app(pad, token, port=8765, *, pad_factory=None, capacity=4):
+def create_app(pad, token, port=8765, *, pad_factory=None, capacity=4, https_port=8766):
     """Application slots are stable pad identities, not Windows XInput indices.
 
     Supply an ordered list of 1..4 pads, or a first pad plus a factory for
@@ -68,6 +80,24 @@ def create_app(pad, token, port=8765, *, pad_factory=None, capacity=4):
         raise ValueError('Provide one to four distinct pads')
     slots = [{'pad': p, 'ws': None, 'last': 0.0, 'count': 0, 'armed': False} for p in pads]
     pad = pads[0]
+
+    for s in slots:
+        def make_handler(slot_item):
+            def on_rumble(large, small):
+                ws = slot_item['ws']
+                if ws is not None and not ws.closed and ws.prepared:
+                    try:
+                        loop = asyncio.get_running_loop()
+                    except RuntimeError:
+                        return
+                    async def send():
+                        try:
+                            await ws.send_json({'type': 'rumble', 'large': large, 'small': small})
+                        except Exception:
+                            pass
+                    loop.call_soon_threadsafe(lambda: asyncio.create_task(send()))
+            return on_rumble
+        s['pad'].set_rumble_callback(make_handler(s))
 
     def roster(detail=False):
         rows = []
@@ -94,12 +124,21 @@ def create_app(pad, token, port=8765, *, pad_factory=None, capacity=4):
         return web.FileResponse(ROOT/'static'/'host.html')
     async def status(request):
         data={'mode':pad.mode,'error':pad.error,'connected':any(s['ws'] is not None for s in slots), **roster(local(request))}
-        if local(request): data.update(url=f'http://{lan_ip()}:{port}/#token={token}',state=pad.state,packets=sum(s['count'] for s in slots))
+        if local(request):
+            ip = lan_ip()
+            data.update(
+                url=f'http://{ip}:{port}/#token={token}',
+                https_url=f'https://{ip}:{https_port}/#token={token}',
+                state=pad.state,
+                packets=sum(s['count'] for s in slots)
+            )
         return web.json_response(data,headers={'Cache-Control':'no-store'})
     async def qr(request):
         if not local(request): raise web.HTTPForbidden()
         buf=io.BytesIO()
-        qrcode.make(f'http://{lan_ip()}:{port}/#token={token}').save(buf,format='PNG')
+        proto = request.query.get('proto', 'http')
+        p = https_port if proto == 'https' else port
+        qrcode.make(f'{proto}://{lan_ip()}:{p}/#token={token}').save(buf,format='PNG')
         return web.Response(body=buf.getvalue(),content_type='image/png',headers={'Cache-Control':'no-store'})
     async def ws_handler(request):
         if not authorized(request): raise web.HTTPUnauthorized(text='Pairing tidak valid. Scan QR dari desktop.')
@@ -209,6 +248,7 @@ def create_app(pad, token, port=8765, *, pad_factory=None, capacity=4):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description='Pocket Pad desktop server')
     parser.add_argument('--port',type=int,default=8765)
+    parser.add_argument('--https-port',type=int,default=8766)
     parser.add_argument('--diagnostic',action='store_true')
     parser.add_argument('--controllers', type=int, choices=range(1,5), default=4,
                         help='Application slots (not Windows XInput indices)')
@@ -220,5 +260,31 @@ if __name__=='__main__':
                 print(f'XInput unavailable: {exc}\nRunning diagnostic mode for this slot.',flush=True)
         return DiagnosticPad()
     pads = [make_pad() for _ in range(args.controllers)]
-    print(f'Desktop dashboard: http://localhost:{args.port}/host\nApplication slots: {len(pads)} (not OS XInput indices)\nModes: {", ".join(p.mode for p in pads)}',flush=True)
-    web.run_app(create_app(pads,secrets.token_urlsafe(24),args.port),host='0.0.0.0',port=args.port,access_log=None)
+    token = secrets.token_urlsafe(24)
+    app = create_app(pads, token, args.port, https_port=args.https_port)
+    
+    async def run_dual_server():
+        runner = web.AppRunner(app, access_log=None)
+        await runner.setup()
+        site_http = web.TCPSite(runner, '0.0.0.0', args.port)
+        await site_http.start()
+        
+        https_ok = False
+        try:
+            from ssl_helper import get_or_create_ssl_context
+            ssl_ctx, _, _ = get_or_create_ssl_context(ROOT / '.ssl', lan_ip())
+            site_https = web.TCPSite(runner, '0.0.0.0', args.https_port, ssl_context=ssl_ctx)
+            await site_https.start()
+            https_ok = True
+        except Exception as e:
+            print(f'HTTPS disabled: {e}', flush=True)
+            
+        print(f'Desktop dashboard: http://localhost:{args.port}/host\nHTTP Server: http://{lan_ip()}:{args.port}\nHTTPS (Gyro): {"https://" + lan_ip() + ":" + str(args.https_port) if https_ok else "Disabled"}\nApplication slots: {len(pads)}\nModes: {", ".join(p.mode for p in pads)}', flush=True)
+        
+        while True:
+            await asyncio.sleep(3600)
+            
+    try:
+        asyncio.run(run_dual_server())
+    except (KeyboardInterrupt, SystemExit):
+        pass

@@ -11,6 +11,17 @@ let deadzone=Number.isFinite(preferences.deadzone)?Math.max(0,Math.min(.2,prefer
 let swapSticks=preferences.swapSticks===true;
 let buttonScale=Number.isFinite(preferences.buttonScale)?Math.max(60,Math.min(200,preferences.buttonScale)):100;
 let stickScale=Number.isFinite(preferences.stickScale)?Math.max(60,Math.min(200,preferences.stickScale)):100;
+
+// Haptics & Vibration
+let hapticTouch=preferences.hapticTouch!==false;
+let gameRumble=preferences.gameRumble!==false;
+
+// Gyro Steering Wheel
+let enableGyro=preferences.enableGyro===true;
+let gyroMaxAngle=Number.isFinite(preferences.gyroMaxAngle)?Math.max(20,Math.min(90,preferences.gyroMaxAngle)):45;
+let gyroDeadzone=Number.isFinite(preferences.gyroDeadzone)?Math.max(0,Math.min(10,preferences.gyroDeadzone)):3;
+let gyroZeroAngle=0,lastGyroSend=0,currentSteerAngle=0;
+
 let token=new URLSearchParams(location.hash.slice(1)).get('token');
 try{token=token||sessionStorage.getItem('pad-token');if(token)sessionStorage.setItem('pad-token',token);}catch{}
 if(token&&location.hash)history.replaceState(null,'',location.pathname);
@@ -23,6 +34,13 @@ let initialPinchDist=0,initialPinchScale=1;
 let roster={capacity:4,connected_count:0,slots:[]};
 const labels={cross:'× / A',circle:'○ / B',square:'□ / X',triangle:'△ / Y',up:'↑ D-pad',down:'↓ D-pad',left:'← D-pad',right:'→ D-pad',l1:'L1 / LB',r1:'R1 / RB',l2:'L2 / LT',r2:'R2 / RT',l3:'L3',r3:'R3',share:'Share / Back',options:'Options / Start',home:'Home / Guide',disabled:'Nonaktif'};
 const orientation=()=>pad.clientWidth>=pad.clientHeight?'landscape':'portrait';
+
+function triggerTouchHaptic(ms=18){
+ if(hapticTouch&&typeof navigator.vibrate==='function'){
+  try{navigator.vibrate(ms);}catch{}
+ }
+}
+
 function defaults(){const w=pad.clientWidth,h=pad.clientHeight,p=w<h,unit=$('[data-control="cross"]').offsetWidth+5,dx=unit/w*100,dy=unit/h*100,lx=p?22:16,rx=p?78:84,cy=p?38:48;return {l2:[p?13:12,13],l1:[p?35:27,13],r1:[p?65:73,13],r2:[p?87:88,13],up:[lx,cy-dy],left:[lx-dx,cy],right:[lx+dx,cy],down:[lx,cy+dy],triangle:[rx,cy-dy],square:[rx-dx,cy],circle:[rx+dx,cy],cross:[rx,cy+dy],share:[p?40:43,p?24:30],home:[50,p?48:43],options:[p?60:57,p?24:30],'left-stick':[p?26:33,70],'right-stick':[p?74:67,70],l3:[p?26:33,p?84:92],r3:[p?74:67,p?84:92]};}
 function getScale(el){
  if(!el)return buttonScale/100;
@@ -95,7 +113,7 @@ function changeScale(delta){
  }
 }
 function persistLayout(){storage.set(STORE,JSON.stringify(saved));}
-function persistSettings(){storage.set(SETTINGS,JSON.stringify({mapping,deadzone,swapSticks,buttonScale,stickScale}));}
+function persistSettings(){storage.set(SETTINGS,JSON.stringify({mapping,deadzone,swapSticks,buttonScale,stickScale,hapticTouch,gameRumble,enableGyro,gyroMaxAngle,gyroDeadzone}));}
 function sendState(force=false,critical=true){
  if(!connected||pendingSlot||socket?.readyState!==1)return;
  if(socket.bufferedAmount>4096){socket.close(4000,'Input queue stalled');return;}
@@ -107,7 +125,74 @@ function sendState(force=false,critical=true){
 }
 function aggregate(){const mapped=input.mapButtons([...held.values()],mapping);state.buttons=mapped.buttons;state.triggers=mapped.triggers;sendState();}
 function reset(){clearTimeout(homeTimer);clearTimeout(homePulse);homePointer=null;held.clear();sticks.clear();physicalAxes.fill(0);state.buttons=[];state.axes=[0,0,0,0];state.triggers=[0,0];document.querySelectorAll('.pressed,.active').forEach(e=>e.classList.remove('pressed','active'));document.querySelectorAll('.knob').forEach(e=>e.style.transform='');sendState(true);}
-function screen(name){reset();drags.clear();selectControl(null);editing=name==='edit';body.dataset.editing=String(editing);body.dataset.screen=name;$('#phone-menu').hidden=name!=='menu';$('#mapping-screen').hidden=name!=='mapping';$('#edit-tools').hidden=!editing;$('#play-status').hidden=name!=='play';controls.forEach(el=>el.classList.remove('dragging','selected'));persistLayout();if(name==='play'||name==='edit')layout();}
+
+function computeSteeringAngle(e){
+ const orient=window.screen?.orientation?.angle??(window.orientation||0);
+ if(orient===90)return -(e.beta||0);
+ if(orient===270||orient===-90)return e.beta||0;
+ return e.gamma||0;
+}
+
+function handleOrientation(e){
+ if(!enableGyro||body.dataset.screen!=='play')return;
+ if(e.beta===null&&e.gamma===null)return;
+ const raw=computeSteeringAngle(e);
+ let diff=raw-gyroZeroAngle;
+ while(diff>180)diff-=360;
+ while(diff<-180)diff+=360;
+ currentSteerAngle=diff;
+ let steerVal=0;
+ const absDiff=Math.abs(diff);
+ if(absDiff>gyroDeadzone){
+  const sign=diff>0?1:-1;
+  const effective=(absDiff-gyroDeadzone)/Math.max(1,(gyroMaxAngle-gyroDeadzone));
+  steerVal=sign*Math.min(1.0,effective);
+ }
+ if(!sticks.has($('#left-stick'))){
+  physicalAxes[0]=steerVal;
+  state.axes=swapSticks?[...physicalAxes.slice(2),...physicalAxes.slice(0,2)]:physicalAxes.slice();
+  const now=performance.now();
+  if(now-lastGyroSend>=16){
+   lastGyroSend=now;
+   sendState(false,false);
+  }
+ }
+ const visualAngle=Math.max(-120,Math.min(120,diff));
+ const wheel=$('#gyro-wheel');if(wheel)wheel.style.transform=`rotate(${visualAngle.toFixed(1)}deg)`;
+ const display=$('#gyro-angle-display');if(display)display.textContent=`${diff>=0?'+':''}${Math.round(diff)}°`;
+}
+
+function calibrateGyro(){
+ gyroZeroAngle=currentSteerAngle+gyroZeroAngle;
+ triggerTouchHaptic(25);
+ const display=$('#gyro-angle-display');if(display)display.textContent='0°';
+ const wheel=$('#gyro-wheel');if(wheel)wheel.style.transform='rotate(0deg)';
+}
+
+async function requestGyroPermission(){
+ if(typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function'){
+  try{const res=await DeviceOrientationEvent.requestPermission();return res==='granted';}catch{return false;}
+ }
+ return true;
+}
+
+function updateGyroUI(){
+ const overlay=$('#gyro-overlay');
+ if(overlay)overlay.hidden=!enableGyro||body.dataset.screen!=='play';
+ const statusSmall=$('#gyro-menu-status');
+ if(statusSmall){statusSmall.textContent=enableGyro?`Aktif · Maks ${gyroMaxAngle}°`:'Nonaktif · Aktifkan untuk main game balap';}
+ const isHttps=location.protocol==='https:';
+ const httpsBox=$('#gyro-https-box');
+ if(httpsBox){
+  httpsBox.hidden=isHttps;
+  if(!isHttps){
+   const link=$('#gyro-https-link');
+   if(link)link.href=`https://${location.hostname}:8766/${location.search}#token=${token||''}`;
+  }
+ }
+}
+
+function screen(name){reset();drags.clear();selectControl(null);editing=name==='edit';body.dataset.editing=String(editing);body.dataset.screen=name;$('#phone-menu').hidden=name!=='menu';$('#mapping-screen').hidden=name!=='mapping';$('#edit-tools').hidden=!editing;$('#play-status').hidden=name!=='play';updateGyroUI();controls.forEach(el=>el.classList.remove('dragging','selected'));persistLayout();if(name==='play'||name==='edit')layout();}
 function menu(){screen('menu');try{screenOrientationUnlock();if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});}catch{}}
 function screenOrientationUnlock(){try{window.screen.orientation.unlock();}catch{}}
 function showRoster(data){
@@ -126,6 +211,7 @@ function connectionUI(){
  $('#connection-detail').textContent=connected?'Siap menerima input dari HP ini.':token?'Pastikan server aktif dan slot tersedia.':'Scan QR dari dashboard desktop.';
  $('#run-gamepad').disabled=!connected||pendingSlot;
  showRoster(roster);
+ updateGyroUI();
 }
 function connect(){
  clearTimeout(retry);if(!token||!active||socket?.readyState<2)return;
@@ -136,6 +222,17 @@ function connect(){
   let m;try{m=JSON.parse(e.data);}catch{return;}
   if(m.type==='ready'){connected=true;pendingSlot=false;attempts=0;slot=m.slot||1;desiredSlot=slot;lastWire=null;body.dataset.connection=m.mode==='xinput'?'online':'diagnostic';$('#menu-notice').textContent=m.mode==='xinput'?'Input dikirim langsung saat tombol disentuh. Gunakan Wi-Fi 5 GHz dekat router untuk hasil terbaik.':m.message||'Mode tes. Input belum diterima game.';showRoster(m);connectionUI();reset();}
   else if(m.type==='roster')showRoster(m);
+  else if(m.type==='rumble'){
+   if(gameRumble&&typeof navigator.vibrate==='function'){
+    const intensity=Math.max(m.large||0,m.small||0);
+    if(intensity>0){
+     const ms=Math.min(250,Math.round(40+(intensity/255)*160));
+     try{navigator.vibrate(ms);}catch{}
+    }else{
+     try{navigator.vibrate(0);}catch{}
+    }
+   }
+  }
   else if(m.type==='error'){pendingSlot=false;$('#menu-notice').textContent=m.message||'Slot tidak tersedia.';connectionUI();}
   else if(m.type==='pong'&&typeof m.time==='number')$('#ping-value').textContent=Math.max(0,performance.now()-m.time).toFixed(1);
   else if(m.type==='ack'){const start=pendingAcks.get(m.seq);if(start!==undefined){$('#input-rtt').textContent=(performance.now()-start).toFixed(1);pendingAcks.delete(m.seq);}if(Number.isFinite(m.server_ms))$('#server-time').textContent=m.server_ms.toFixed(2);}
@@ -145,7 +242,7 @@ function connect(){
 }
 async function acquireWake(){try{if(!wake||wake.released)wake=await navigator.wakeLock?.request('screen');}catch{}}
 async function fullscreen(){try{if(!document.fullscreenElement&&document.documentElement.requestFullscreen){await document.documentElement.requestFullscreen();try{await window.screen.orientation.lock('landscape');}catch{}}}catch{}acquireWake();}
-$('#run-gamepad').onclick=()=>{if(!connected||pendingSlot)return;screen('play');fullscreen();};
+$('#run-gamepad').onclick=async()=>{if(!connected||pendingSlot)return;if(enableGyro)await requestGyroPermission();screen('play');fullscreen();};
 $('#edit-layout').onclick=()=>screen('edit');
 $('#edit-mapping').onclick=()=>screen('mapping');
 $('#mapping-back').onclick=menu;
@@ -182,14 +279,65 @@ if(stickSizeInput){
  stickSizeInput.value=stickScale;if(stickSizeVal)stickSizeVal.textContent=stickScale+'%';
  stickSizeInput.oninput=e=>{stickScale=Number(e.target.value);if(stickSizeVal)stickSizeVal.textContent=stickScale+'%';persistSettings();layout();};
 }
+
+// Haptic & Vibration DOM listeners
+const hapticTouchBox=$('#haptic-touch');
+if(hapticTouchBox){hapticTouchBox.checked=hapticTouch;hapticTouchBox.onchange=e=>{hapticTouch=e.target.checked;if(hapticTouch)triggerTouchHaptic(20);persistSettings();};}
+const gameRumbleBox=$('#game-rumble');
+if(gameRumbleBox){gameRumbleBox.checked=gameRumble;gameRumbleBox.onchange=e=>{gameRumble=e.target.checked;persistSettings();};}
+
+// Gyro DOM listeners
+const enableGyroBox=$('#enable-gyro');
+if(enableGyroBox){
+ enableGyroBox.checked=enableGyro;
+ enableGyroBox.onchange=async e=>{
+  enableGyro=e.target.checked;
+  if(enableGyro)await requestGyroPermission();
+  updateGyroUI();
+  persistSettings();
+ };
+}
+const gyroAngleInput=$('#gyro-max-angle'),gyroAngleVal=$('#gyro-angle-val');
+if(gyroAngleInput){
+ gyroAngleInput.value=gyroMaxAngle;if(gyroAngleVal)gyroAngleVal.textContent=gyroMaxAngle+'°';
+ gyroAngleInput.oninput=e=>{gyroMaxAngle=Number(e.target.value);if(gyroAngleVal)gyroAngleVal.textContent=gyroMaxAngle+'°';updateGyroUI();persistSettings();};
+}
+const gyroDeadzoneInput=$('#gyro-deadzone'),gyroDeadzoneVal=$('#gyro-deadzone-val');
+if(gyroDeadzoneInput){
+ gyroDeadzoneInput.value=gyroDeadzone;if(gyroDeadzoneVal)gyroDeadzoneVal.textContent=gyroDeadzone+'°';
+ gyroDeadzoneInput.oninput=e=>{gyroDeadzone=Number(e.target.value);if(gyroDeadzoneVal)gyroDeadzoneVal.textContent=gyroDeadzone+'°';persistSettings();};
+}
+const gyroCalBtn=$('#gyro-calibrate-btn');
+if(gyroCalBtn)gyroCalBtn.onclick=calibrateGyro;
+const gyroQuickCenter=$('#gyro-quick-center');
+if(gyroQuickCenter)gyroQuickCenter.onclick=calibrateGyro;
+const quickToggleGyro=$('#quick-toggle-gyro');
+if(quickToggleGyro){
+ quickToggleGyro.onclick=async()=>{
+  enableGyro=!enableGyro;
+  if(enableGyro)await requestGyroPermission();
+  if(enableGyroBox)enableGyroBox.checked=enableGyro;
+  triggerTouchHaptic(20);
+  updateGyroUI();
+  persistSettings();
+ };
+}
+
 $('#reset-mapping').onclick=()=>{
  reset();mapping={};deadzone=.06;swapSticks=false;buttonScale=100;stickScale=100;
+ hapticTouch=true;gameRumble=true;enableGyro=false;gyroMaxAngle=45;gyroDeadzone=3;
  for(const select of document.querySelectorAll('[data-map]'))select.value=select.dataset.map;
  $('#deadzone').value=6;$('#deadzone-value').textContent='6%';$('#swap-sticks').checked=false;
  if(btnSizeInput){btnSizeInput.value=100;if(btnSizeVal)btnSizeVal.textContent='100%';}
  if(stickSizeInput){stickSizeInput.value=100;if(stickSizeVal)stickSizeVal.textContent='100%';}
- persistSettings();layout();
+ if(hapticTouchBox)hapticTouchBox.checked=true;
+ if(gameRumbleBox)gameRumbleBox.checked=true;
+ if(enableGyroBox)enableGyroBox.checked=false;
+ if(gyroAngleInput){gyroAngleInput.value=45;if(gyroAngleVal)gyroAngleVal.textContent='45°';}
+ if(gyroDeadzoneInput){gyroDeadzoneInput.value=3;if(gyroDeadzoneVal)gyroDeadzoneVal.textContent='3°';}
+ persistSettings();layout();updateGyroUI();
 };
+
 pad.addEventListener('pointerdown',e=>{
  if(editing&&e.target===pad){selectControl(null);}
 });
@@ -250,22 +398,47 @@ const removePinch=e=>{
 for(const event of ['pointerup','pointercancel'])pad.addEventListener(event,removePinch);
 
 for(const el of document.querySelectorAll('[data-button]:not([data-button="home"]),[data-trigger]')){
- el.addEventListener('pointerdown',e=>{if(body.dataset.screen!=='play')return;e.preventDefault();el.setPointerCapture(e.pointerId);held.set(e.pointerId,el.dataset.control);aggregate();el.classList.add('pressed');});
+ el.addEventListener('pointerdown',e=>{
+  if(body.dataset.screen!=='play')return;
+  e.preventDefault();
+  triggerTouchHaptic(18);
+  el.setPointerCapture(e.pointerId);
+  held.set(e.pointerId,el.dataset.control);
+  aggregate();
+  el.classList.add('pressed');
+ });
  const release=e=>{if(!held.has(e.pointerId))return;held.delete(e.pointerId);aggregate();if(![...held.values()].includes(el.dataset.control))el.classList.remove('pressed');};
  for(const event of ['pointerup','pointercancel','lostpointercapture'])el.addEventListener(event,release);
 }
 const home=$('[data-button="home"]');
-home.addEventListener('pointerdown',e=>{if(body.dataset.screen!=='play'||homePointer!==null)return;e.preventDefault();home.setPointerCapture(e.pointerId);homePointer=e.pointerId;homeLong=false;home.classList.add('pressed');homeTimer=setTimeout(()=>{homeLong=true;menu();},750);});
+home.addEventListener('pointerdown',e=>{
+ if(body.dataset.screen!=='play'||homePointer!==null)return;
+ e.preventDefault();
+ triggerTouchHaptic(25);
+ home.setPointerCapture(e.pointerId);
+ homePointer=e.pointerId;homeLong=false;home.classList.add('pressed');
+ homeTimer=setTimeout(()=>{homeLong=true;menu();},750);
+});
 home.addEventListener('pointerup',e=>{if(e.pointerId!==homePointer)return;clearTimeout(homeTimer);homePointer=null;home.classList.remove('pressed');if(!homeLong&&body.dataset.screen==='play'){held.set('home-pulse','home');aggregate();homePulse=setTimeout(()=>{held.delete('home-pulse');aggregate();},70);}});
 for(const event of ['pointercancel','lostpointercapture'])home.addEventListener(event,e=>{if(e.pointerId!==homePointer)return;clearTimeout(homeTimer);homePointer=null;home.classList.remove('pressed');});
 for(const [id,offset] of [['left-stick',0],['right-stick',2]]){
  const el=$('#'+id),knob=el.querySelector('.knob');
  function move(event){const data=sticks.get(el);if(!data||data.id!==event.pointerId||body.dataset.screen!=='play')return;const samples=event.getCoalescedEvents?.(),e=samples?.length?samples[samples.length-1]:event;let x=(e.clientX-data.cx)/data.max,y=(e.clientY-data.cy)/data.max;const n=Math.hypot(x,y);if(n>1){x/=n;y/=n;}const v=input.analog(x,y,deadzone);physicalAxes[offset]=v[0];physicalAxes[offset+1]=v[1];state.axes=swapSticks?[...physicalAxes.slice(2),...physicalAxes.slice(0,2)]:physicalAxes.slice();sendState(false,false);knob.style.transform=`translate3d(${x*data.max}px,${y*data.max}px,0)`;}
- el.addEventListener('pointerdown',e=>{if(body.dataset.screen!=='play'||sticks.has(el))return;e.preventDefault();const r=el.getBoundingClientRect();sticks.set(el,{id:e.pointerId,cx:r.left+r.width/2,cy:r.top+r.height/2,max:r.width*.34});el.setPointerCapture(e.pointerId);el.classList.add('active');move(e);});
+ el.addEventListener('pointerdown',e=>{
+  if(body.dataset.screen!=='play'||sticks.has(el))return;
+  e.preventDefault();
+  triggerTouchHaptic(15);
+  const r=el.getBoundingClientRect();
+  sticks.set(el,{id:e.pointerId,cx:r.left+r.width/2,cy:r.top+r.height/2,max:r.width*.34});
+  el.setPointerCapture(e.pointerId);
+  el.classList.add('active');
+  move(e);
+ });
  el.addEventListener('onpointerrawupdate' in window?'pointerrawupdate':'pointermove',move);
  const release=e=>{if(sticks.get(el)?.id!==e.pointerId)return;sticks.delete(el);physicalAxes[offset]=physicalAxes[offset+1]=0;state.axes=swapSticks?[...physicalAxes.slice(2),...physicalAxes.slice(0,2)]:physicalAxes.slice();sendState();el.classList.remove('active');knob.style.transform='';};
  for(const event of ['pointerup','pointercancel','lostpointercapture'])el.addEventListener(event,release);
 }
+window.addEventListener('deviceorientation',handleOrientation);
 window.addEventListener('resize',()=>{reset();drags.clear();controls.forEach(e=>e.classList.remove('dragging'));layout();});
 window.addEventListener('blur',reset);
 window.addEventListener('pagehide',()=>{active=false;reset();persistLayout();socket?.close();});

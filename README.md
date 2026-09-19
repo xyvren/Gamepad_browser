@@ -13,19 +13,24 @@ Layar bermain bersih tanpa teks atau tombol antarmuka yang mengganggu. Mendukung
 
 ![Gamepad Virtual Fullscreen](screenshots/mobile-gamepad.png)
 
-### 2. Mode Editor Tata Letak & Perbesar Tombol
+### 2. Mode Kemudi Setir Gyro (Steering Wheel)
+Mainkan game balap mobil (Forza Horizon, Need for Speed, F1, Assetto Corsa) dengan memutar HP ke kiri dan kanan layaknya setir mobil balap sungguhan, lengkap dengan jarum derajat kemiringan dan tombol kalibrasi titik lurus (*Center*).
+
+![Mode Kemudi Setir Gyro](screenshots/gyro-steering-mode.png)
+
+### 3. Mode Editor Tata Letak & Perbesar Tombol
 Atur posisi setiap tombol dengan menggesernya secara bebas. Ketuk tombol untuk memperbesar (`+`) atau memperkecil (`-`) ukurannya (skala 60% s/d 220%), atau gunakan gesture cubitan 2 jari (*pinch to zoom*).
 
 ![Editor Tata Letak dan Ukuran](screenshots/layout-editor.png)
 
-### 3. Aplikasi Windows Desktop & Menu HP
+### 4. Aplikasi Windows Desktop & Menu HP
 Aplikasi Windows mandiri (`Gamepad.exe`) menampilkan QR code pairing langsung di layar PC beserta status 4 slot pemain. Di HP, tersedia menu lengkap untuk memilih slot pemain (P1–P4) dan opsi mapping.
 
 | Aplikasi Windows Native (`Gamepad.exe`) | Tampilan Menu Setup di HP |
 | :---: | :---: |
 | ![Windows Desktop App](screenshots/windows-desktop-app.png) | <img src="screenshots/mobile-menu.png" width="360" alt="Mobile Menu"> |
 
-### 4. Dashboard Web Host
+### 5. Dashboard Web Host
 Alternatif monitoring via web browser di `http://127.0.0.1:8765/host` untuk melihat QR code dan diagnostik koneksi LAN.
 
 ![Dashboard Web Host](screenshots/desktop-web-dashboard.png)
@@ -47,6 +52,16 @@ Alternatif monitoring via web browser di `http://127.0.0.1:8765/host` untuk meli
 - **Tampilan Gamepad HP Fullscreen Murni**:
   - Saat bermain (*Run Gamepad*), layar HP 100% bersih hanya berisi tombol gamepad tanpa header, footer, teks status, atau tombol antarmuka yang mengganggu.
   - Tampilan controller bergaya PlayStation / Xbox (D-Pad, × ○ □ △, L1/R1, L2/R2, L3/R3, Dual Analog Stick, Share, Options, Home).
+- **Kemudi Sensor Gyro (Motion Steering Wheel)**:
+  - Mengubah HP menjadi setir mobil balap virtual menggunakan sensor gerak & kemiringan (`DeviceOrientation`).
+  - Derajat putaran ponsel saat dipegang mendatar (*landscape*) dipetakan secara mulus dan presisi ke sumbu belok stik kiri XInput (**Left Stick X: -32768 s/d +32767**).
+  - Pilihan sudut belok maksimal (20° s/d 90°, default 45°) dan deadzone tengah agar mobil tetap meluncur stabil di trek lurus.
+  - Tombol 1-sentuh **🎯 Center** di layar untuk menetapkan posisi genggaman tangan saat ini sebagai titik nol lurus.
+  - Indikator visual kemudi setir virtual dan jarum derajat belok digital di layar HP.
+  - Dukungan server HTTPS otomatis (Port 8766) dengan sertifikat SSL lokal agar browser Chrome/Safari mengizinkan akses sensor gerak.
+- **Sistem Getaran Ganda (Dual Vibration & Haptics)**:
+  - **Getaran Sentuhan Layar (Haptic Touch)**: Memberikan umpan balik getaran halus (*tactile kick*) setiap kali jempol menekan tombol, trigger, atau kemudi di layar kaca HP.
+  - **Getaran Game PC (Force Feedback Rumble)**: Menangkap getaran dua motor Xbox 360 (*Large Motor* & *Small Motor*) dari game PC secara real-time via callback driver ViGEmBus, dan meneruskannya ke ponsel sehingga HP ikut bergetar saat mobil menabrak pembatas, jalanan berbatu, tabrakan, tembakan, atau ledakan di dalam game.
 - **Menu Setup Interaktif di HP**:
   - **Slot Controller 1–4 (Multiplayer)**: Mendukung hingga 4 HP terhubung bersamaan ke 1 PC sebagai Pemain 1, 2, 3, dan 4.
   - **Indikator Koneksi & Slot**: Menampilkan slot stik aktif Anda (`Stik 01`) dan jumlah HP yang terhubung (`1 / 4 terhubung`).
@@ -92,16 +107,17 @@ controler/
 ├── start.bat                    # Script peluncur via command-line / python
 ├── launch.py                    # Launcher background server & web host
 ├── server.py                    # Server HTTP & WebSocket biner (manajemen 4 slot XInput)
+├── ssl_helper.py                # Generator sertifikat SSL/TLS lokal otomatis untuk HTTPS Gyro
 ├── protocol.py                  # Definisi protokol tombol, validasi state, & normalisasi axis
-├── enable-firewall.ps1          # Script PowerShell pembuka firewall port TCP 8765 LAN
+├── enable-firewall.ps1          # Script PowerShell pembuka firewall port TCP 8765 & 8766 LAN
 ├── installers/
 │   └── ViGEmBus_1.22.0_...exe  # Installer resmi driver ViGEmBus Windows XInput
 ├── static/
-│   ├── index.html               # Halaman web controller HP (Menu, Editor, Gamepad)
-│   ├── app.js                   # Logika antarmuka HP, pointer events, drag & drop, touch scale
+│   ├── index.html               # Halaman web controller HP (Menu, Editor, Gamepad, Gyro HUD)
+│   ├── app.js                   # Logika antarmuka HP, gyro steering, haptics, scaling, WebSocket
 │   ├── input.js                 # Encoder paket biner 16-byte, remap buttons, analog processing
-│   ├── controller.css           # Styling visual gamepad fullscreen & scaling CSS
-│   ├── menu.css                 # Styling menu landing page HP & dialog settings
+│   ├── controller.css           # Styling visual gamepad fullscreen, steering wheel & scaling CSS
+│   ├── menu.css                 # Styling menu landing page HP, gyro & haptics settings
 │   ├── host.html                # Dashboard desktop host untuk monitor 4 slot & QR code
 │   ├── host.js                  # Logika dashboard host & polling status
 │   └── style.css                # Styling dasar dashboard host
@@ -109,9 +125,11 @@ controler/
     ├── test_protocol.py         # Unit test validasi input & tombol
     ├── test_server.py           # Unit test server endpoint API & WebSocket handshake
     ├── test_backend_slots.py    # Unit test alokasi slot stik 1–4 & isolasi multi-client
+    ├── test_gyro_vibration.py   # Unit test callback getaran rumble ViGEm & dual HTTP/HTTPS
     ├── test_launch.py           # Unit test launcher subprocess
     ├── test_surface.py          # Unit test aset statis web
     ├── input.test.cjs           # Unit test wire format biner 16-byte (Node.js)
+    ├── verify_gyro_haptics.py   # Acceptance test Playwright: mode kemudi setir gyro & haptics
     ├── verify_scaling.py        # Acceptance test Playwright: perbesar/perkecil tombol & persistensi
     ├── verify_menu.py           # Acceptance test Playwright: navigasi menu & pemilihan slot
     ├── verify_layout.py         # Acceptance test Playwright: editor posisi & boundaries
