@@ -1,14 +1,24 @@
 # Pocket Pad 🎮
 
-**Pocket Pad** adalah aplikasi gamepad virtual web untuk smartphone yang terhubung langsung ke PC Windows via Wi-Fi lokal, mengemulasikan controller fisik **Xbox 360 / XInput** secara real-time dengan latensi ultra-rendah (sub-milidetik).
+**Pocket Pad** adalah aplikasi gamepad virtual untuk smartphone yang terhubung langsung ke PC Windows via Wi-Fi lokal, mengemulasikan controller fisik **Xbox 360 / XInput** secara real-time dengan latensi ultra-rendah (sub-milidetik).
 
-Cukup scan QR code dari layar monitor menggunakan HP, dan HP Anda seketika berubah menjadi gamepad nirkabel layar penuh tanpa perlu install aplikasi tambahan di ponsel.
+Cukup jalankan aplikasi desktop **`Gamepad.exe`** di Windows, scan QR code yang muncul langsung di jendela aplikasi menggunakan kamera HP, dan smartphone Anda seketika berubah menjadi gamepad nirkabel layar penuh tanpa perlu install aplikasi tambahan di ponsel.
 
 ---
 
 ## ✨ Fitur Utama
 
-- **Tampilan Gamepad Fullscreen Murni**:
+- **Aplikasi Windows Native 1x Klik (`Gamepad.exe`)**:
+  - Aplikasi desktop mandiri (standalone executable). Cukup klik dua kali untuk menjalankan.
+  - **Tampilan QR Code di Windows**: QR code pairing langsung tampil di dalam jendela aplikasi desktop.
+  - **Monitor 4 Slot Controller**: Memantau status koneksi, jumlah paket, dan mode stik 1–4 secara real-time.
+  - Tombol cepat untuk pasang driver ViGEmBus, buka firewall, atau reset token pairing.
+- **Installer & Shortcut Generator**:
+  - Tersedia **`Installer.exe`** (Wizard GUI) dan **`installer.bat`** (1-klik batch setup).
+  - Otomatis membuat **Shortcut Desktop** & **Start Menu** dengan ikon gamepad kustom.
+  - Otomatis memeriksa & menginstal driver resmi ViGEmBus serta mengatur izin Windows Firewall.
+  - Tersedia **`uninstall.bat`** untuk menghapus shortcut & rule firewall dengan bersih kapan saja.
+- **Tampilan Gamepad HP Fullscreen Murni**:
   - Saat bermain (*Run Gamepad*), layar HP 100% bersih hanya berisi tombol gamepad tanpa header, footer, teks status, atau tombol antarmuka yang mengganggu.
   - Tampilan controller bergaya PlayStation / Xbox (D-Pad, × ○ □ △, L1/R1, L2/R2, L3/R3, Dual Analog Stick, Share, Options, Home).
 - **Menu Setup Interaktif di HP**:
@@ -29,10 +39,6 @@ Cukup scan QR code dari layar monitor menggunakan HP, dan HP Anda seketika berub
   - Mengirim stream data biner mentah (*ArrayBuffer*) 16 byte per paket melalui WebSocket lokal.
   - Dilengkapi `TCP_NODELAY` dan kompresi nonaktif (*zero serialization delay* & *zero GC pause*).
   - Benchmark latensi input ke driver Windows rata-rata **0,06 ms** dengan RTT transmisi lokal **0,27 ms**.
-- **Dashboard Desktop Host dengan QR Code**:
-  - Deteksi otomatis IP Wi-Fi lokal PC.
-  - Menampilkan QR code dinamis dengan token autentikasi sesi rahasia.
-  - Monitor status dan aktivitas input 4 slot controller secara visual di monitor PC.
 - **Watchdog & Auto-Neutral**:
   - Input otomatis dinetralkan jika koneksi terputus, HP diminimalkan, atau layar mati, mencegah tombol tersangkut (*stuck key*) di dalam game.
 
@@ -42,14 +48,23 @@ Cukup scan QR code dari layar monitor menggunakan HP, dan HP Anda seketika berub
 
 ```text
 controler/
+├── Gamepad.exe                  # Aplikasi Desktop Windows (GUI + Server + QR Terpadu)
+├── Installer.exe                # Wizard GUI Installer & Pembuat Shortcut Windows
+├── installer.bat                # Script batch otomatis instalasi & shortcut
+├── create_shortcut.ps1          # Script PowerShell pembuat shortcut Desktop & Start Menu
+├── uninstall.bat                # Script pembersih shortcut & firewall rule
+├── app_gui.py                   # Source code aplikasi GUI Windows Gamepad
+├── installer_gui.py             # Source code GUI installer Windows
+├── icon.ico                     # Ikon aplikasi resolusi tinggi (multi-size)
 ├── .gitignore                   # Konfigurasi file yang diabaikan Git
+├── .gitattributes               # Penanganan line endings Windows & Linux
 ├── LICENSE                      # Lisensi open-source MIT
 ├── README.md                    # Dokumentasi lengkap proyek
 ├── requirements.txt             # Dependensi runtime Python (aiohttp, qrcode, pillow, vgamepad)
 ├── requirements-dev.txt         # Dependensi testing (pytest, pytest-asyncio, playwright)
-├── setup.bat                    # Script otomatis instalasi environment & dependensi
-├── start.bat                    # Script satu-klik untuk menjalankan server & membuka dashboard
-├── launch.py                    # Launcher otomatis server background & web host
+├── setup.bat                    # Script setup virtual environment Python
+├── start.bat                    # Script peluncur via command-line / python
+├── launch.py                    # Launcher background server & web host
 ├── server.py                    # Server HTTP & WebSocket biner (manajemen 4 slot XInput)
 ├── protocol.py                  # Definisi protokol tombol, validasi state, & normalisasi axis
 ├── enable-firewall.ps1          # Script PowerShell pembuka firewall port TCP 8765 LAN
@@ -84,70 +99,56 @@ controler/
 
 1. **PC / Laptop (Host Server)**:
    - Sistem Operasi: **Windows 10 / 11 (64-bit)**.
-   - Python: Versi **3.10 atau lebih baru** (atau [uv](https://docs.astral.sh/uv/)).
    - Driver Gamepad: **ViGEmBus 1.22.0** (installer resmi sudah disertakan di folder `installers/`).
+   - *(Opsional untuk pengembang)*: Python 3.10+ jika ingin memodifikasi source code.
 2. **Smartphone (Client Controller)**:
    - Perangkat: Android atau iOS (iPhone / iPad).
-   - Browser: Chrome, Safari, Firefox, Edge, atau browser modern berbasis WebKit/Blink.
-   - Jaringan: Terhubung ke **jaringan Wi-Fi yang sama** dengan PC (disarankan frekuensi 5 GHz untuk performa optimal).
+   - Browser: Chrome, Safari, Firefox, Edge, atau browser modern lainnya.
+   - Jaringan: Terhubung ke **Wi-Fi yang sama** dengan PC (disarankan 5 GHz).
 
 ---
 
 ## 🚀 Panduan Instalasi & Menjalankan
 
-### Langkah 1: Persiapan Awal
-Pastikan driver ViGEmBus terpasang di Windows:
-- Jika belum pernah memasang, buka folder `installers/` dan jalankan `ViGEmBus_1.22.0_x64_x86_arm64.exe`, lalu ikuti panduan instalasi di layar hingga selesai.
+### Cara 1: Menggunakan Installer (Rekomendasi)
+1. Klik dua kali **`Installer.exe`** (atau jalankan **`installer.bat`**).
+2. Ikuti petunjuk di layar:
+   - Driver ViGEmBus akan otomatis dicek dan dijalankan jika belum ada.
+   - Port Firewall TCP 8765 otomatis diizinkan untuk Wi-Fi lokal.
+   - Shortcut **Pocket Pad** otomatis dibuat di **Desktop** dan **Start Menu**.
+3. Selesai! Anda cukup membuka shortcut **Pocket Pad** di Desktop kapan pun ingin bermain.
 
-### Langkah 2: Setup Otomatis
-1. Buka folder proyek.
-2. Klik dua kali file **`setup.bat`**.
-3. Script ini akan secara otomatis:
-   - Mendeteksi apakah Anda memiliki `uv` atau `python`.
-   - Membuat virtual environment `.venv`.
-   - Memasang semua modul yang dibutuhkan dari `requirements.txt`.
-   - Memeriksa status keberadaan driver ViGEmBus.
-
-### Langkah 3: Pengaturan Firewall (Hanya Sekali)
-Agar HP dapat terhubung ke server di PC via Wi-Fi lokal, port `8765` harus diizinkan lewat Windows Firewall:
-- Klik kanan file **`enable-firewall.ps1`** → pilih **Run with PowerShell** (atau jalankan lewat PowerShell sebagai Administrator).
-- Script ini hanya mengizinkan koneksi dari jaringan lokal (*LocalSubnet*), sehingga aman dan tidak mengekspos port ke internet.
-
-### Langkah 4: Menjalankan Server
-1. Klik dua kali file **`start.bat`**.
-2. Jendela server akan aktif di background dan browser desktop otomatis terbuka ke:
-   ```text
-   http://127.0.0.1:8765/host
-   ```
-3. Di dashboard desktop akan muncul **QR Code Pairing**.
+### Cara 2: Langsung Jalankan Aplikasi (`Gamepad.exe`)
+1. Pastikan driver ViGEmBus sudah terpasang (jika belum, jalankan `installers\ViGEmBus_1.22.0_x64_x86_arm64.exe`).
+2. Jalankan `enable-firewall.ps1` sebagai Administrator (hanya perlu sekali).
+3. Klik dua kali **`Gamepad.exe`**.
+4. Jendela aplikasi Pocket Pad akan langsung terbuka dengan QR code pairing siap scan.
 
 ---
 
 ## 📱 Cara Menggunakan di HP
 
-1. Buka kamera atau aplikasi pemindai QR di HP Anda, lalu arahkan ke QR Code yang ada di monitor PC.
-2. Buka tautan yang muncul. Anda akan disambut oleh **Menu Utama Pocket Pad**:
-   - Di bagian atas akan terlihat slot stik Anda (misal `01`) dan status koneksi (*Terhubung · XInput*).
-   - Jika bermain bersama teman, pilih slot stik yang masih kosong (`01`, `02`, `03`, atau `04`).
+1. Buka kamera atau aplikasi pemindai QR di HP Anda, lalu arahkan ke QR Code yang tampil di jendela **Pocket Pad** pada monitor PC.
+2. Buka link yang muncul. Anda akan melihat **Menu Utama Pocket Pad**:
+   - Di bagian atas terlihat slot stik Anda (misal `01`) dan status koneksi (*Terhubung · XInput*).
+   - Jika bermain multiplayer bersama teman, pilih slot stik kosong (`01`, `02`, `03`, atau `04`).
 3. **Mengatur Ukuran & Posisi Tombol**:
    - Tekan menu **Posisi & ukuran tombol**.
-   - Ketuk tombol mana saja yang ingin diubah (tombol akan memiliki garis hijau neon).
+   - Ketuk tombol mana saja yang ingin diubah ukurannya (ditandai bingkai hijau neon).
    - Tekan **`＋`** untuk memperbesar, atau **`－`** untuk memperkecil (atau gunakan cubitan 2 jari langsung di layar).
-   - Geser tombol ke tempat yang pas dengan jempol tangan Anda.
+   - Geser tombol ke posisi yang pas dengan jempol tangan Anda.
    - Tekan tombol centang **`✓`** untuk menyimpan.
 4. **Mulai Bermain**:
    - Tekan tombol hijau **Run Gamepad**.
    - Putar HP ke posisi mendatar (*landscape*).
    - Layar seketika berubah menjadi gamepad murni layar penuh tanpa teks apa pun.
-   - Buka game favorit Anda di PC (Steam, Emulator, Game Pass, dll). Game akan langsung mendeteksi stik Anda sebagai controller Xbox 360 resmi!
+   - Buka game favorit Anda di PC (Steam, Emulator, Game Pass, Epic Games, dll). Game akan langsung mendeteksi stik Anda sebagai controller Xbox 360 resmi!
 5. **Kembali ke Menu / Edit Saat Main**:
    - Tahan tombol **Home (ikon rumah)** selama 0,75 detik untuk kembali ke menu pengaturan kapan saja.
 
 ---
 
 ## 🔬 Spesifikasi Protokol Wire Format (16-Byte Binary)
-
-Untuk menghilangkan overhead transmisi teks JSON dan meminimalkan garbage collection pada browser HP, Pocket Pad menggunakan transmisi biner terkompresi 16 byte per paket:
 
 | Offset (Byte) | Tipe Data | Deskripsi |
 |---|---|---|
@@ -165,8 +166,6 @@ Untuk menghilangkan overhead transmisi teks JSON dan meminimalkan garbage collec
 ---
 
 ## 🧪 Pengujian Otomatis (Testing Suite)
-
-Proyek ini dilengkapi pengujian menyeluruh (Unit Test, Integration Test, Playwright Browser Acceptance Test, dan Hardware XInput Verification):
 
 ```bat
 :: Jalankan unit test Python
@@ -197,10 +196,10 @@ node --test tests\input.test.cjs
 
 - **HP tidak bisa membuka halaman saat scan QR code (ERR_CONNECTION_TIMED_OUT)**:
   - Pastikan HP dan PC terhubung ke Wi-Fi yang sama.
-  - Jalankan script `enable-firewall.ps1` sebagai Administrator.
+  - Jalankan tombol **Buka Port Firewall** di aplikasi desktop atau jalankan `enable-firewall.ps1` sebagai Administrator.
   - Periksa apakah router Anda mengaktifkan fitur *AP Isolation / Client Isolation* (jika aktif, perangkat tidak bisa saling kontak).
 - **Status menunjukkan "Mode Diagnostik" bukan "XInput"**:
-  - Driver ViGEmBus belum aktif atau belum diinstal. Jalankan file di `installers/ViGEmBus_1.22.0_x64_x86_arm64.exe`, restart PC jika diminta.
+  - Driver ViGEmBus belum aktif. Klik tombol **Install ViGEmBus** di aplikasi desktop atau jalankan file di `installers/ViGEmBus_1.22.0_x64_x86_arm64.exe`, restart PC jika diminta.
 - **Game tidak merespons gerakan stik**:
   - Pastikan jendela game sedang aktif (fokus). Beberapa game PC membatasi pembacaan input stik jika jendela game diminimalkan.
 - **Tampilan browser HP masih menampilkan address bar / tidak full**:

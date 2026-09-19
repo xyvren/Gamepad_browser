@@ -11,7 +11,8 @@ from aiohttp import web
 import qrcode
 from protocol import decode_binary, neutral, validate_state
 
-ROOT = Path(__file__).parent
+import sys
+ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).parent))
 
 class DiagnosticPad:
     mode = 'diagnostic'
